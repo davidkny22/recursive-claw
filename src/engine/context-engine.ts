@@ -134,8 +134,11 @@ export class RecursiveClawEngine implements ContextEngineInstance {
     await this.storage!.ensureSession(sessionId);
     const existingCount = await this.storage!.getMessageCount(sessionId);
 
-    if (messages.length > existingCount) {
-      const newMessages = messages.slice(existingCount);
+    // Filter out system messages — they're injected per-turn and shouldn't be stored
+    const storableMessages = messages.filter(m => m.role !== 'system');
+
+    if (storableMessages.length > existingCount) {
+      const newMessages = storableMessages.slice(existingCount);
       for (let i = 0; i < newMessages.length; i++) {
         const msg = newMessages[i];
         const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -150,7 +153,7 @@ export class RecursiveClawEngine implements ContextEngineInstance {
           metadata: { originalContent: msg.content },
         });
       }
-      console.log(`[recursive-claw] Stored ${newMessages.length} new messages (total: ${messages.length})`);
+      console.log(`[recursive-claw] Stored ${newMessages.length} new messages (total: ${storableMessages.length})`);
     }
 
     const systemMessages = messages.filter(m => m.role === 'system');
