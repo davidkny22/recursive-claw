@@ -92,20 +92,6 @@ RC_BUDGET_PER_QUERY=0.05
 RC_BUDGET_PER_TURN=0.10
 ```
 
-## Verification
-
-recursive-claw ships with a comprehensive E2E test suite that simulates a realistic 115-message, 3-session OpenClaw conversation with 8 specific facts planted at known depths. The test verifies:
-
-- Every planted fact is retrievable via FTS and regex search
-- Exact positional retrieval via `rc_slice` and `rc_peek`
-- Cross-session search finds results across session boundaries
-- `assemble()` returns only the fresh tail (not full history)
-- `compact()` preserves 100% of data — zero information loss
-- REPL sandbox runs against real storage and finds planted facts
-- Cost tracker accumulates and resets correctly
-
-Run it yourself: `npm run test:run`
-
 ## Benchmarks (planned)
 
 We're designing a formal benchmark suite to produce hard numbers. The benchmarks will compare recursive-claw against OpenClaw's legacy engine and lossless-claw across four dimensions:
