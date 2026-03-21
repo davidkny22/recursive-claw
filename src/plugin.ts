@@ -6,6 +6,7 @@ import {
   RC_SLICE_DEFINITION,
   RC_QUERY_DEFINITION,
   RC_TIMELINE_DEFINITION,
+  RC_REPL_DEFINITION,
 } from './retrieval/tools/tool-definitions.js';
 
 /**
@@ -47,6 +48,7 @@ export default function register(api: OpenClawPluginAPI): void {
     { def: RC_SLICE_DEFINITION, mod: () => import('./retrieval/tools/rc-slice.js') },
     { def: RC_QUERY_DEFINITION, mod: () => import('./retrieval/tools/rc-query.js') },
     { def: RC_TIMELINE_DEFINITION, mod: () => import('./retrieval/tools/rc-timeline.js') },
+    { def: RC_REPL_DEFINITION, mod: () => import('./retrieval/tools/rc-repl.js') },
   ];
 
   for (const { def, mod } of tools) {

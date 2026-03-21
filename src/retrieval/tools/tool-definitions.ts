@@ -69,6 +69,18 @@ export const RC_TIMELINE_DEFINITION = {
   },
 };
 
+export const RC_REPL_DEFINITION = {
+  name: 'rc_repl',
+  description: 'Run JavaScript code in a sandboxed REPL with access to all retrieval functions (peek, grep, slice, query, timeline, llm_query). Use store()/get() for variable persistence across calls. Call FINAL(answer) to return a result.',
+  parameters: {
+    type: 'object' as const,
+    properties: {
+      code: { type: 'string', description: 'JavaScript code to run in the REPL sandbox' },
+    },
+    required: ['code'],
+  },
+};
+
 export const ALL_TOOL_DEFINITIONS = [
   RC_PEEK_DEFINITION,
   RC_GREP_DEFINITION,
