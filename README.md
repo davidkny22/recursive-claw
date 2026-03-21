@@ -81,9 +81,25 @@ Works with zero config. Customize when you need to:
 
 Environment variables (`RC_MODE`, `RC_PROVIDER`, `RC_MODEL`, `RC_BUDGET_PER_TURN`, etc.) override config for quick testing.
 
-## Benchmarks
+## Status & Roadmap
 
-Formal benchmarks comparing recursive-claw against legacy compaction and lossless-claw are in progress. Measuring: token usage per turn, cost per session, retrieval accuracy (planted-fact recall), and latency. Results and a research paper to follow.
+**What's tested and working:**
+- Tools mode (rc_peek, rc_grep, rc_slice, rc_query, rc_timeline, rc_repl) — verified E2E against OpenClaw 2026.3.13
+- Anthropic provider (Haiku) for sub-queries — live tested
+- SQLite storage with FTS5 — cross-session persistence verified
+- 147 automated tests (unit, integration, E2E with planted-fact retrieval)
+
+**What's configured but not yet live-tested:**
+- OpenAI, Google, and OpenRouter providers — routing logic tested with mocks, not yet verified with real API calls
+- REPL mode code block interception — currently works via `rc_repl` tool call, native ```repl``` block execution planned
+
+**Coming next:**
+- Block-level storage — group messages into conversational blocks for better retrieval context
+- Workspace context externalization — move SOUL.md, AGENTS.md, and other workspace files out of the system prompt and into queryable storage
+- Formal benchmarks — token usage, cost, retrieval accuracy, and latency comparisons against legacy and lossless-claw
+- Research paper formalizing the results
+
+Contributions and feedback welcome — [open an issue](https://github.com/davidkny22/recursive-claw/issues).
 
 ## Based on
 
