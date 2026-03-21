@@ -13,34 +13,21 @@ import { createSliceHandler } from './rc-slice.js';
 import { createQueryHandler } from './rc-query.js';
 import { createTimelineHandler } from './rc-timeline.js';
 
+/**
+ * Register all retrieval tools with the OpenClaw plugin API.
+ * Note: In production, tools are registered in plugin.ts at load time.
+ * This function is kept for testing and direct registration use cases.
+ */
 export function registerTools(api: OpenClawPluginAPI, engine: RetrievalEngine): void {
-  api.registerTool(RC_PEEK_DEFINITION.name, {
-    description: RC_PEEK_DEFINITION.description,
-    parameters: RC_PEEK_DEFINITION.parameters,
-    handler: createPeekHandler(engine),
-  });
+  const defs = [
+    { ...RC_PEEK_DEFINITION, handler: createPeekHandler(engine) },
+    { ...RC_GREP_DEFINITION, handler: createGrepHandler(engine) },
+    { ...RC_SLICE_DEFINITION, handler: createSliceHandler(engine) },
+    { ...RC_QUERY_DEFINITION, handler: createQueryHandler(engine) },
+    { ...RC_TIMELINE_DEFINITION, handler: createTimelineHandler(engine) },
+  ];
 
-  api.registerTool(RC_GREP_DEFINITION.name, {
-    description: RC_GREP_DEFINITION.description,
-    parameters: RC_GREP_DEFINITION.parameters,
-    handler: createGrepHandler(engine),
-  });
-
-  api.registerTool(RC_SLICE_DEFINITION.name, {
-    description: RC_SLICE_DEFINITION.description,
-    parameters: RC_SLICE_DEFINITION.parameters,
-    handler: createSliceHandler(engine),
-  });
-
-  api.registerTool(RC_QUERY_DEFINITION.name, {
-    description: RC_QUERY_DEFINITION.description,
-    parameters: RC_QUERY_DEFINITION.parameters,
-    handler: createQueryHandler(engine),
-  });
-
-  api.registerTool(RC_TIMELINE_DEFINITION.name, {
-    description: RC_TIMELINE_DEFINITION.description,
-    parameters: RC_TIMELINE_DEFINITION.parameters,
-    handler: createTimelineHandler(engine),
-  });
+  for (const def of defs) {
+    api.registerTool(def, { name: def.name });
+  }
 }

@@ -10,3 +10,4 @@ docs/superpowers/
 coverage/
 *.tsbuildinfo
 .DS_Store
+.openclaw-test/

@@ -17,7 +17,7 @@ import { tmpdir } from 'os';
 import { RecursiveClawEngine } from '../../src/engine/context-engine.js';
 import { REPLSandbox } from '../../src/retrieval/repl/repl-sandbox.js';
 import { createBuiltins } from '../../src/retrieval/repl/repl-builtins.js';
-import type { ToolDefinition } from '../../src/types.js';
+import type { RetrievalEngine } from '../../src/retrieval/retrieval-engine.js';
 
 // ======================================================================
 // Planted facts — ground truth we verify retrieval against
@@ -36,18 +36,11 @@ const PLANTED_FACTS = {
 describe('E2E: Realistic multi-session verification', () => {
   let engine: RecursiveClawEngine;
   let tempDir: string;
-  let tools: Map<string, ToolDefinition>;
 
   beforeAll(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'rc-e2e-'));
-    tools = new Map();
 
-    const mockApi = {
-      registerContextEngine: () => {},
-      registerTool: (name: string, def: ToolDefinition) => { tools.set(name, def); },
-    };
-
-    engine = new RecursiveClawEngine(mockApi, {
+    engine = new RecursiveClawEngine(null, {
       mode: 'tools',
       databasePath: join(tempDir, 'e2e.db'),
       freshTailCount: 10,
@@ -141,63 +134,57 @@ describe('E2E: Realistic multi-session verification', () => {
   // 2. RETRIEVAL ACCURACY — find every planted fact
   // ==================================================================
   describe('retrieval accuracy', () => {
+    let r: ReturnType<typeof engine.getRetrieval>;
+    beforeAll(() => { r = engine.getRetrieval(); r.setCurrentSession('arch-session'); });
+
     it('finds database decision (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'PostgreSQL pgvector', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('PostgreSQL pgvector', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results.some(r => (r.snippet as string).includes('pgvector'))).toBe(true);
+      expect(results.some(res => res.snippet.includes('pgvector'))).toBe(true);
     });
 
     it('finds auth decision (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'JWT RS256 refresh', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('JWT RS256 refresh', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results.some(r => (r.snippet as string).includes('RS256'))).toBe(true);
+      expect(results.some(res => res.snippet.includes('RS256'))).toBe(true);
     });
 
     it('finds cache decision (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'Redis TTL', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('Redis TTL', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
 
     it('finds API endpoint (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'agents endpoint OpenAPI', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('agents endpoint OpenAPI', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
 
     it('finds error format (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'error code message', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('error code message', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
 
     it('finds root cause (regex)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'pgBouncer.*max_client_conn', mode: 'regex', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('pgBouncer.*max_client_conn', { mode: 'regex', scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results.some(r => (r.snippet as string).includes('exhausted'))).toBe(true);
+      expect(results.some(res => res.snippet.includes('exhausted'))).toBe(true);
     });
 
     it('finds fix (FTS)', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'FIX query batching', scope: 'all' }) as Array<Record<string, unknown>>;
+      const results = await r.grep('FIX query batching', { scope: 'all' });
       expect(results.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('retrieves planted fact by exact position (rc_slice)', async () => {
-      const slice = tools.get('rc_slice')!;
-      const results = await slice.handler({ start: 3, end: 4, sessionId: 'arch-session' }) as Array<Record<string, unknown>>;
+    it('retrieves planted fact by exact position (slice)', async () => {
+      const results = await r.slice(3, 4, 'arch-session');
       expect(results).toHaveLength(1);
       expect(results[0].content).toContain('PostgreSQL 16 with pgvector');
     });
 
-    it('retrieves deep fact via rc_peek with offset', async () => {
-      const peek = tools.get('rc_peek')!;
-      const results = await peek.handler({ offset: 14, length: 1, sessionId: 'debug-session' }) as Array<Record<string, unknown>>;
+    it('retrieves deep fact via peek with offset', async () => {
+      const results = await r.peek(14, 1, 'debug-session');
       expect(results).toHaveLength(1);
-      expect((results[0].content as string)).toContain('connection pool was exhausted');
+      expect(results[0].content).toContain('connection pool was exhausted');
     });
   });
 
@@ -206,16 +193,16 @@ describe('E2E: Realistic multi-session verification', () => {
   // ==================================================================
   describe('cross-session retrieval', () => {
     it('finds mentions across sessions', async () => {
-      const grep = tools.get('rc_grep')!;
-      const results = await grep.handler({ pattern: 'PostgreSQL', scope: 'all' }) as Array<Record<string, unknown>>;
-      const sessions = new Set(results.map(r => r.sessionId as string));
+      const r = engine.getRetrieval();
+      const results = await r.grep('PostgreSQL', { scope: 'all' });
+      const sessions = new Set(results.map(res => res.message.sessionId));
       expect(sessions.size).toBeGreaterThanOrEqual(1);
     });
 
     it('timeline shows correct totals', async () => {
-      const timeline = tools.get('rc_timeline')!;
-      const entries = await timeline.handler({ sessionId: 'arch-session' }) as Array<Record<string, unknown>>;
-      const totalMsgs = entries.reduce((sum, e) => sum + (e.messageCount as number), 0);
+      const r = engine.getRetrieval();
+      const entries = await r.timeline('arch-session');
+      const totalMsgs = entries.reduce((sum, e) => sum + e.messageCount, 0);
       expect(totalMsgs).toBe(40);
     });
   });
@@ -229,15 +216,15 @@ describe('E2E: Realistic multi-session verification', () => {
       await engine.compact({ sessionId: 'impl-session', force: true });
       await engine.compact({ sessionId: 'debug-session', force: true });
 
-      const grep = tools.get('rc_grep')!;
+      const r = engine.getRetrieval();
 
-      const r1 = await grep.handler({ pattern: 'pgvector', scope: 'all' }) as unknown[];
+      const r1 = await r.grep('pgvector', { scope: 'all' });
       expect(r1.length).toBeGreaterThanOrEqual(1);
 
-      const r2 = await grep.handler({ pattern: 'RS256', scope: 'all' }) as unknown[];
+      const r2 = await r.grep('RS256', { scope: 'all' });
       expect(r2.length).toBeGreaterThanOrEqual(1);
 
-      const r3 = await grep.handler({ pattern: 'query batching', scope: 'all' }) as unknown[];
+      const r3 = await r.grep('query batching', { scope: 'all' });
       expect(r3.length).toBeGreaterThanOrEqual(1);
 
       const storage = engine.getStorage();

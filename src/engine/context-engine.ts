@@ -28,21 +28,37 @@ export class RecursiveClawEngine implements ContextEngineInstance {
     ownsCompaction: true,
   };
 
-  private config!: RecursiveClawConfig;
-  private storage!: SQLiteStorage;
-  private retrieval!: RetrievalEngine;
-  private subQueryEngine!: SubQueryEngine;
-  private costTracker!: CostTracker;
-  private assembler!: Assembler;
+  private config: RecursiveClawConfig | null = null;
+  private storage: SQLiteStorage | null = null;
+  private retrieval: RetrievalEngine | null = null;
+  private subQueryEngine: SubQueryEngine | null = null;
+  private costTracker: CostTracker | null = null;
+  private assembler: Assembler | null = null;
   private api: OpenClawPluginAPI | null;
   private pluginConfig: Record<string, unknown>;
+  private bootstrapped = false;
 
   constructor(api: OpenClawPluginAPI | null, pluginConfig?: Record<string, unknown>) {
     this.api = api;
     this.pluginConfig = pluginConfig ?? {};
+    console.log('[recursive-claw] Engine instance created');
+  }
+
+  async ensureReady(): Promise<void> {
+    return this.ensureBootstrapped();
+  }
+
+  private async ensureBootstrapped(): Promise<void> {
+    if (!this.bootstrapped) {
+      console.log('[recursive-claw] Auto-bootstrapping (bootstrap() not called by host)');
+      await this.bootstrap();
+    }
   }
 
   async bootstrap(): Promise<void> {
+    if (this.bootstrapped) return;
+    console.log('[recursive-claw] bootstrap() called');
+
     // 1. Resolve config
     this.config = resolveConfig(this.pluginConfig);
 
@@ -68,28 +84,29 @@ export class RecursiveClawEngine implements ContextEngineInstance {
     this.subQueryEngine = new SubQueryEngine(this.retrieval, router, this.costTracker);
 
     // Wire sub-query into retrieval engine
-    this.retrieval.setSubQueryFn((question, opts) => this.subQueryEngine.query(question, opts));
+    this.retrieval.setSubQueryFn((question, opts) => this.subQueryEngine!.query(question, opts));
 
     // 5. Create assembler
     this.assembler = new Assembler(this.storage, this.config);
 
-    // 6. Register tools if in tools mode
-    if (this.config.mode === 'tools' && this.api) {
-      registerTools(this.api, this.retrieval);
-    }
+    // Tools are registered at plugin load time in plugin.ts, not here
+
+    this.bootstrapped = true;
+    console.log('[recursive-claw] bootstrap complete — mode:', this.config.mode);
   }
 
   async ingest(params: IngestParams): Promise<void> {
+    await this.ensureBootstrapped();
     const { sessionId, message, isHeartbeat } = params;
     if (isHeartbeat) return;
 
-    await this.storage.ensureSession(sessionId);
-    this.retrieval.setCurrentSession(sessionId);
+    await this.storage!.ensureSession(sessionId);
+    this.retrieval!.setCurrentSession(sessionId);
 
-    const messageIndex = await this.storage.getNextMessageIndex(sessionId);
+    const messageIndex = await this.storage!.getNextMessageIndex(sessionId);
     const content = typeof message.content === 'string' ? message.content : JSON.stringify(message.content);
 
-    await this.storage.storeMessage({
+    await this.storage!.storeMessage({
       id: crypto.randomUUID(),
       sessionId,
       role: message.role as 'user' | 'assistant' | 'system' | 'tool',
@@ -102,24 +119,24 @@ export class RecursiveClawEngine implements ContextEngineInstance {
   }
 
   async assemble(params: AssembleParams): Promise<AssembleResult> {
+    await this.ensureBootstrapped();
     const { sessionId, messages } = params;
-    this.retrieval.setCurrentSession(sessionId);
+    this.retrieval!.setCurrentSession(sessionId);
 
     const systemMessages = messages.filter(m => m.role === 'system');
-    return this.assembler.assemble(sessionId, systemMessages);
+    return this.assembler!.assemble(sessionId, systemMessages);
   }
 
   async compact(params: CompactParams): Promise<CompactResult> {
-    // No-op by default — we don't destroy information.
-    // Manual /compact triggers index maintenance.
+    await this.ensureBootstrapped();
     if (params.force) {
-      await this.storage.rebuildFTSIndex();
+      await this.storage!.rebuildFTSIndex();
     }
     return { ok: true, compacted: true };
   }
 
   async afterTurn(): Promise<void> {
-    this.costTracker.resetTurn();
+    if (this.costTracker) this.costTracker.resetTurn();
   }
 
   async prepareSubagentSpawn(): Promise<void> {
@@ -131,8 +148,8 @@ export class RecursiveClawEngine implements ContextEngineInstance {
   }
 
   // Accessors for testing
-  getStorage(): SQLiteStorage { return this.storage; }
-  getRetrieval(): RetrievalEngine { return this.retrieval; }
-  getCostTracker(): CostTracker { return this.costTracker; }
-  getConfig(): RecursiveClawConfig { return this.config; }
+  getStorage(): SQLiteStorage { return this.storage!; }
+  getRetrieval(): RetrievalEngine { return this.retrieval!; }
+  getCostTracker(): CostTracker { return this.costTracker!; }
+  getConfig(): RecursiveClawConfig { return this.config!; }
 }

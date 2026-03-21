@@ -196,10 +196,14 @@ export interface OpenClawPluginAPI {
     id: string,
     factory: (config?: Record<string, unknown>) => ContextEngineInstance
   ): void;
-  registerTool(name: string, definition: ToolDefinition): void;
+  registerTool(
+    tool: ToolDefinition | ((ctx: unknown) => ToolDefinition | ToolDefinition[] | null),
+    opts?: { names?: string[]; name?: string; optional?: boolean }
+  ): void;
 }
 
 export interface ToolDefinition {
+  name: string;
   description: string;
   parameters: {
     type: 'object';

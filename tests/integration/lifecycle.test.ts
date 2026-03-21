@@ -36,16 +36,13 @@ describe('Full lifecycle integration', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('registers all 5 tools on bootstrap', () => {
-    expect(registeredTools.size).toBe(5);
-    expect(registeredTools.has('rc_peek')).toBe(true);
-    expect(registeredTools.has('rc_grep')).toBe(true);
-    expect(registeredTools.has('rc_slice')).toBe(true);
-    expect(registeredTools.has('rc_query')).toBe(true);
-    expect(registeredTools.has('rc_timeline')).toBe(true);
+  it('bootstraps and exposes retrieval engine', () => {
+    expect(engine.getRetrieval()).toBeDefined();
+    expect(engine.getCostTracker()).toBeDefined();
+    expect(engine.getStorage()).toBeDefined();
   });
 
-  it('full flow: ingest → assemble → tool retrieval', async () => {
+  it('full flow: ingest → assemble → retrieval', async () => {
     // 1. Ingest 50 messages
     for (let i = 0; i < 50; i++) {
       const role = i % 3 === 0 ? 'user' : i % 3 === 1 ? 'assistant' : 'tool';
@@ -73,26 +70,23 @@ describe('Full lifecycle integration', () => {
     expect(assembled.messages).toHaveLength(11);
     expect(assembled.systemPromptAddition).toContain('50 messages');
 
-    // 3. Use rc_grep tool to find specific content
-    const grepTool = registeredTools.get('rc_grep')!;
-    const grepResults = await grepTool.handler({ pattern: 'PostgreSQL' }) as Array<Record<string, unknown>>;
+    // 3. Use retrieval engine to grep
+    const retrieval = engine.getRetrieval();
+    const grepResults = await retrieval.grep('PostgreSQL');
     expect(grepResults.length).toBeGreaterThanOrEqual(1);
-    expect((grepResults[0].snippet as string)).toContain('PostgreSQL');
+    expect(grepResults[0].snippet).toContain('PostgreSQL');
 
-    // 4. Use rc_peek to see recent messages
-    const peekTool = registeredTools.get('rc_peek')!;
-    const peekResults = await peekTool.handler({ offset: 0, length: 3 }) as Array<Record<string, unknown>>;
+    // 4. Peek recent messages
+    const peekResults = await retrieval.peek(0, 3);
     expect(peekResults).toHaveLength(3);
 
-    // 5. Use rc_slice to get a range
-    const sliceTool = registeredTools.get('rc_slice')!;
-    const sliceResults = await sliceTool.handler({ start: 10, end: 12 }) as Array<Record<string, unknown>>;
+    // 5. Slice a range
+    const sliceResults = await retrieval.slice(10, 12);
     expect(sliceResults).toHaveLength(2);
-    expect((sliceResults[0].content as string)).toContain('PostgreSQL');
+    expect(sliceResults[0].content).toContain('PostgreSQL');
 
-    // 6. Use rc_timeline
-    const timelineTool = registeredTools.get('rc_timeline')!;
-    const timeline = await timelineTool.handler({}) as Array<Record<string, unknown>>;
+    // 6. Timeline
+    const timeline = await retrieval.timeline();
     expect(timeline.length).toBeGreaterThanOrEqual(1);
 
     // 7. Compact does not destroy data
@@ -100,7 +94,7 @@ describe('Full lifecycle integration', () => {
     expect(compactResult.ok).toBe(true);
 
     // 8. Data still fully searchable after compact
-    const postCompactGrep = await grepTool.handler({ pattern: 'JWT' }) as Array<Record<string, unknown>>;
+    const postCompactGrep = await retrieval.grep('JWT');
     expect(postCompactGrep.length).toBeGreaterThanOrEqual(1);
   });
 });

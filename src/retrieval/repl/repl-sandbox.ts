@@ -173,7 +173,7 @@ export class REPLSandbox {
       // Wrap in async IIFE for top-level await support
       const wrappedCode = `(async () => { ${code} })()`;
 
-      const script = new vm.Script(wrappedCode, { timeout: this.timeoutMs });
+      const script = new vm.Script(wrappedCode);
       const promise = script.runInContext(this.context, { timeout: this.timeoutMs });
 
       // Await the async IIFE result
