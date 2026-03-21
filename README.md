@@ -1,15 +1,30 @@
-# recursive-claw
+<p align="center">
+  <h1 align="center">recursive-claw</h1>
+  <p align="center">RLM-native ContextEngine plugin for OpenClaw</p>
+  <p align="center"><i>Stop compacting. Start querying.</i></p>
+</p>
 
-RLM-native ContextEngine plugin for OpenClaw. Zero information loss. Massive cost reduction.
+<p align="center">
+  <a href="https://www.npmjs.com/package/recursive-claw"><img src="https://img.shields.io/npm/v/recursive-claw?color=coral" alt="npm version"></a>
+  <a href="https://github.com/davidkny22/recursive-claw"><img src="https://img.shields.io/badge/OpenClaw-2026.3.7%2B-blue" alt="OpenClaw compatibility"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
+</p>
 
-## What it does
+---
 
-Instead of stuffing conversation history into the context window and summarizing it away, recursive-claw keeps history external in a SQLite database. The model queries it on demand — only pulling in exactly what it needs.
+Conversation history doesn't belong in the context window. recursive-claw keeps it external in SQLite and gives the model tools to query what it needs, when it needs it. No compaction. No summarization. Nothing is ever lost.
 
-- **80-95% fewer tokens** per turn on the main model
-- **Zero information loss** — no compaction, no summarization, ever
-- **Cross-session persistence** — full history survives across sessions, queryable forever
-- **Multi-provider sub-queries** — cheap model (Haiku default) handles retrieval, expensive model reasons
+Based on MIT's [Recursive Language Models](https://arxiv.org/abs/2512.24601) paradigm.
+
+## Why
+
+| | Legacy / lossless-claw | recursive-claw |
+|---|---|---|
+| **History in context** | Summaries + tail (grows with conversation) | Tail only (constant) |
+| **Information loss** | Compaction discards detail at every depth | Zero. Ever. |
+| **Token cost per turn** | Scales with history length | Flat (~2K tokens) |
+| **50K-token history** | ~50K tokens per turn | ~2K + sub-query on demand |
+| **Cross-session** | Lost or degraded | Fully queryable |
 
 ## Install
 
@@ -17,127 +32,69 @@ Instead of stuffing conversation history into the context window and summarizing
 openclaw plugins install recursive-claw
 ```
 
-## Configure
-
-Add to your `openclaw.json`:
-
-```json
-{
-  "plugins": {
-    "slots": { "contextEngine": "recursive-claw" },
-    "entries": {
-      "recursive-claw": { "enabled": true }
-    }
-  }
-}
-```
-
-That's it. Zero-config defaults: tools mode, SQLite auto-created, 20-message fresh tail, Haiku sub-queries, $0.10/turn budget cap.
+That's it. Zero config needed. SQLite auto-created, Haiku sub-queries, $0.10/turn budget cap.
 
 ## How it works
 
-Every message is stored in SQLite with full-text search (FTS5). When the model needs context, `assemble()` returns only:
+Every message is stored in SQLite with FTS5 full-text search. `assemble()` returns only the system prompt, a fresh tail (last 20 messages), and a context manifest. The model queries history on demand.
 
-1. **System prompt** (original)
-2. **Fresh tail** (last 20 messages)
-3. **Context manifest** ("You have 847 messages of history. Use these tools to access what you need.")
-
-The model uses five retrieval tools to query history on demand:
-
-| Tool | Purpose |
-|------|---------|
-| `rc_peek` | View messages at a position in history |
-| `rc_grep` | Full-text search or regex across all messages |
-| `rc_slice` | Extract a contiguous range by message index |
-| `rc_query` | Ask a question — dispatches to cheap sub-agent |
-| `rc_timeline` | Structural overview of stored history |
-
-`rc_query` is where the cost savings live: it greps for relevant messages, feeds them to a cheap model (Haiku at $1/$5 per 1M tokens), and returns a focused answer. The expensive model never sees the raw history.
-
-## Modes
-
-### Tools Mode (default)
-
-The model calls registered OpenClaw tools. Simple, debuggable, zero code execution.
-
-### REPL Mode (opt-in)
-
-```json
-{ "config": { "mode": "repl" } }
+```
+┌──────────────────────────────────────┐
+│         OpenClaw Agent Turn          │
+│                                      │
+│   System prompt                      │
+│   + Fresh tail (last 20 messages)    │
+│   + Manifest: "847 messages stored"  │
+│   + 6 retrieval tools                │
+│                                      │
+│   History stays in SQLite ──────────►│──── rc_grep("auth decision")
+│   Model queries on demand            │◄─── "JWT with RS256, 15-min access tokens"
+└──────────────────────────────────────┘
 ```
 
-The model writes JavaScript in ` ```repl``` ` code blocks. Runs in a sandboxed VM with retrieval functions, `llm_query()`, `store()`/`get()`, and `FINAL()`/`FINAL_VAR()` signals. Power-user feature for complex retrieval patterns.
+## Tools
+
+| Tool | What it does |
+|------|-------------|
+| `rc_peek` | View messages at a position in history |
+| `rc_grep` | Full-text search or regex across all stored messages |
+| `rc_slice` | Extract a contiguous range by message index |
+| `rc_query` | Ask a question — dispatches to cheap sub-agent for focused answer |
+| `rc_timeline` | Structural overview: time periods, message counts, index ranges |
+| `rc_repl` | Run JavaScript in a sandboxed REPL with all retrieval functions |
+
+`rc_query` is where the cost savings live. It greps for relevant messages, feeds them to a cheap model (Haiku at $1/$5 per 1M tokens), and returns a focused answer. The main model never sees the raw history.
 
 ## Configuration
+
+Works with zero config. Customize when you need to:
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `mode` | `"tools"` | `"tools"` or `"repl"` |
-| `freshTailCount` | `20` | Messages in the fresh tail |
-| `databasePath` | auto | Path to SQLite database |
+| `freshTailCount` | `20` | Messages kept in context window |
+| `databasePath` | auto | SQLite database path |
 | `subQuery.defaultProvider` | `"anthropic"` | `anthropic`, `openai`, `google`, `openrouter` |
-| `subQuery.defaultModel` | `"claude-haiku-4-5"` | Model for sub-queries |
+| `subQuery.defaultModel` | `"claude-haiku-4-5"` | Model for retrieval sub-queries |
 | `subQuery.maxBudgetPerQuery` | `0.05` | USD cap per sub-query |
 | `subQuery.maxBudgetPerTurn` | `0.10` | USD cap per turn |
 
-### Environment variables
+Environment variables (`RC_MODE`, `RC_PROVIDER`, `RC_MODEL`, `RC_BUDGET_PER_TURN`, etc.) override config for quick testing.
 
-```
-RC_MODE=tools|repl
-RC_FRESH_TAIL=20
-RC_DATABASE_PATH=./recursive-claw.db
-RC_PROVIDER=anthropic
-RC_MODEL=claude-haiku-4-5
-RC_BUDGET_PER_QUERY=0.05
-RC_BUDGET_PER_TURN=0.10
-```
+## Benchmarks
 
-## Benchmarks (planned)
+Formal benchmarks comparing recursive-claw against legacy compaction and lossless-claw are in progress. Measuring: token usage per turn, cost per session, retrieval accuracy (planted-fact recall), and latency. Results and a research paper to follow.
 
-We're designing a formal benchmark suite to produce hard numbers. The benchmarks will compare recursive-claw against OpenClaw's legacy engine and lossless-claw across four dimensions:
+## Based on
 
-### 1. Token usage per turn
-Identical conversation histories at varying lengths (1K, 10K, 50K, 100K messages). Measure input tokens consumed per `assemble()` call.
-
-**Hypothesis:** recursive-claw uses 80-95% fewer tokens because history stays external. Legacy/lossless-claw scale linearly with history size; recursive-claw stays flat (tail + manifest).
-
-### 2. Cost per session
-Same workloads, measure total USD spent across all LLM calls (main model + sub-queries) over a 100-turn session.
-
-**Hypothesis:** Despite sub-query costs at Haiku pricing ($1/$5 per 1M tokens), the net savings from not sending 50K+ tokens of history to Opus ($15/$75 per 1M) per turn are massive.
-
-### 3. Retrieval accuracy (planted-fact recall)
-Plant N facts at random depths in a long conversation. Measure recall rate — what percentage of planted facts can the model successfully retrieve?
-
-**Hypothesis:** recursive-claw achieves near-100% recall because nothing is ever compressed or summarized. Legacy and lossless-claw degrade as conversation length increases because compaction loses information.
-
-### 4. Latency
-Time from `assemble()` call to the model receiving its context, with and without sub-queries.
-
-**Hypothesis:** Simple follow-ups (no retrieval needed) are faster than legacy because the context window is smaller. Historical queries add 1-3 seconds for sub-query dispatch but this is a one-time cost, not compounding.
-
-### Research paper
-
-We plan to publish a research paper formalizing these benchmarks and their results, positioning recursive-claw within the broader context of RLM-based approaches to agentic context management. The paper will include:
-
-- Formal comparison against legacy compaction and DAG-based summarization (lossless-claw)
-- Analysis of the cost/quality tradeoff curve across different sub-query model tiers
-- Scaling behavior at 10K, 50K, 100K, and 1M+ message histories
-- Retrieval accuracy degradation curves for each approach
-- Real-world case studies from autonomous agent deployments
-
-If you'd like to collaborate on benchmarking or contribute data, open an issue.
-
-## The paradigm shift
-
-Every other context engine answers "how do we fit more into the window?"
-
-recursive-claw answers "why are we putting it in the window at all?"
+recursive-claw implements the paradigm from [Recursive Language Models](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab — MIT CSAIL, 2025). Context stays external. The model programs its way to what it needs.
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
-## Author
+---
 
-David Kogan
+<p align="center">
+  Built by <a href="https://github.com/davidkny22">David Kogan</a>
+</p>
