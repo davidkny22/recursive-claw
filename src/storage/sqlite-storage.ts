@@ -132,7 +132,12 @@ export class SQLiteStorage implements StorageInterface {
   async fullTextSearch(query: string, opts?: SearchOptions): Promise<SearchResult[]> {
     const db = this.requireDb();
     const limit = opts?.limit ?? 20;
-    const params: unknown[] = [query];
+
+    // Sanitize query for FTS5: remove special characters that break FTS5 syntax
+    const sanitized = query.replace(/[?*"(){}[\]:^~!@#$%&]/g, ' ').trim();
+    if (!sanitized) return [];
+
+    const params: unknown[] = [sanitized];
 
     let sql = `
       SELECT m.*, bm25(messages_fts) as score
