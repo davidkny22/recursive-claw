@@ -92,6 +92,56 @@ RC_BUDGET_PER_QUERY=0.05
 RC_BUDGET_PER_TURN=0.10
 ```
 
+## Verification
+
+recursive-claw ships with a comprehensive E2E test suite that simulates a realistic 115-message, 3-session OpenClaw conversation with 8 specific facts planted at known depths. The test verifies:
+
+- Every planted fact is retrievable via FTS and regex search
+- Exact positional retrieval via `rc_slice` and `rc_peek`
+- Cross-session search finds results across session boundaries
+- `assemble()` returns only the fresh tail (not full history)
+- `compact()` preserves 100% of data — zero information loss
+- REPL sandbox runs against real storage and finds planted facts
+- Cost tracker accumulates and resets correctly
+
+Run it yourself: `npm run test:run`
+
+## Benchmarks (planned)
+
+We're designing a formal benchmark suite to produce hard numbers. The benchmarks will compare recursive-claw against OpenClaw's legacy engine and lossless-claw across four dimensions:
+
+### 1. Token usage per turn
+Identical conversation histories at varying lengths (1K, 10K, 50K, 100K messages). Measure input tokens consumed per `assemble()` call.
+
+**Hypothesis:** recursive-claw uses 80-95% fewer tokens because history stays external. Legacy/lossless-claw scale linearly with history size; recursive-claw stays flat (tail + manifest).
+
+### 2. Cost per session
+Same workloads, measure total USD spent across all LLM calls (main model + sub-queries) over a 100-turn session.
+
+**Hypothesis:** Despite sub-query costs at Haiku pricing ($1/$5 per 1M tokens), the net savings from not sending 50K+ tokens of history to Opus ($15/$75 per 1M) per turn are massive.
+
+### 3. Retrieval accuracy (planted-fact recall)
+Plant N facts at random depths in a long conversation. Measure recall rate — what percentage of planted facts can the model successfully retrieve?
+
+**Hypothesis:** recursive-claw achieves near-100% recall because nothing is ever compressed or summarized. Legacy and lossless-claw degrade as conversation length increases because compaction loses information.
+
+### 4. Latency
+Time from `assemble()` call to the model receiving its context, with and without sub-queries.
+
+**Hypothesis:** Simple follow-ups (no retrieval needed) are faster than legacy because the context window is smaller. Historical queries add 1-3 seconds for sub-query dispatch but this is a one-time cost, not compounding.
+
+### Research paper
+
+We plan to publish a research paper formalizing these benchmarks and their results, positioning recursive-claw within the broader context of RLM-based approaches to agentic context management. The paper will include:
+
+- Formal comparison against legacy compaction and DAG-based summarization (lossless-claw)
+- Analysis of the cost/quality tradeoff curve across different sub-query model tiers
+- Scaling behavior at 10K, 50K, 100K, and 1M+ message histories
+- Retrieval accuracy degradation curves for each approach
+- Real-world case studies from autonomous agent deployments
+
+If you'd like to collaborate on benchmarking or contribute data, open an issue.
+
 ## The paradigm shift
 
 Every other context engine answers "how do we fit more into the window?"
