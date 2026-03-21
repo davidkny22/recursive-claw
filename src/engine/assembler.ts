@@ -31,27 +31,9 @@ export class Assembler {
 
     const nonSystemPipeline = pipelineMessages?.filter(m => m.role !== 'system') ?? [];
     if (nonSystemPipeline.length > 0) {
-      // Use pipeline messages directly — they have proper content block structure.
-      // Start from the end and walk backward to find a safe cut point where
-      // no tool_result is orphaned (missing its tool_use in the window).
-      let candidate = nonSystemPipeline.slice(-this.config.freshTailCount);
-
-      // Walk forward: if first message contains tool_result blocks, skip it
-      // to avoid orphaned references. Keep trimming until we start with a
-      // user or assistant message (not a tool_result continuation).
-      while (candidate.length > 0) {
-        const first = candidate[0];
-        const content = first.content;
-        const isToolResult = first.role === 'tool'
-          || (Array.isArray(content) && content.some((b: Record<string, unknown>) => b.type === 'tool_result'));
-        if (isToolResult) {
-          candidate = candidate.slice(1);
-        } else {
-          break;
-        }
-      }
-
-      tailMessages = candidate;
+      // Use pipeline messages directly — proper Anthropic content block structure.
+      // Must ensure every tool_result has a matching tool_use in the window.
+      tailMessages = sanitizeTail(nonSystemPipeline, this.config.freshTailCount);
     } else {
       const tail = await this.storage.getTailMessages(sessionId, this.config.freshTailCount);
       tailMessages = tail.map(m => ({
@@ -107,4 +89,77 @@ export class Assembler {
 
     return lines.join('\n');
   }
+}
+
+/**
+ * Extract tool_use IDs and tool_result IDs from a message's content blocks.
+ */
+function extractToolIds(msg: { role: string; content: unknown }): { toolUseIds: Set<string>; toolResultIds: Set<string> } {
+  const toolUseIds = new Set<string>();
+  const toolResultIds = new Set<string>();
+  const content = msg.content;
+
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (typeof block === 'object' && block !== null) {
+        const b = block as Record<string, unknown>;
+        if (b.type === 'tool_use' && typeof b.id === 'string') {
+          toolUseIds.add(b.id);
+        }
+        if (b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+          toolResultIds.add(b.tool_use_id);
+        }
+      }
+    }
+  }
+
+  return { toolUseIds, toolResultIds };
+}
+
+/**
+ * Sanitize the tail to ensure every tool_result has a matching tool_use.
+ *
+ * Strategy: take the last N messages, collect all tool_use IDs and
+ * tool_result IDs in the window. If any tool_result references an ID
+ * not in the tool_use set, trim from the start until it's gone.
+ * Also ensure the first message is a user message (Anthropic requirement).
+ */
+function sanitizeTail(
+  messages: Array<{ role: string; content: unknown }>,
+  maxCount: number
+): Array<{ role: string; content: unknown }> {
+  let tail = messages.slice(-maxCount);
+
+  // Iteratively trim from the front until all tool_results are paired
+  for (let attempts = 0; attempts < tail.length && tail.length > 0; attempts++) {
+    const allToolUseIds = new Set<string>();
+    const allToolResultIds = new Set<string>();
+
+    for (const msg of tail) {
+      const { toolUseIds, toolResultIds } = extractToolIds(msg);
+      toolUseIds.forEach(id => allToolUseIds.add(id));
+      toolResultIds.forEach(id => allToolResultIds.add(id));
+    }
+
+    // Check if any tool_result references an ID not in the window
+    let hasOrphan = false;
+    for (const resultId of allToolResultIds) {
+      if (!allToolUseIds.has(resultId)) {
+        hasOrphan = true;
+        break;
+      }
+    }
+
+    if (!hasOrphan) break;
+
+    // Trim the first message and retry
+    tail = tail.slice(1);
+  }
+
+  // Anthropic requires first message to be role 'user'
+  while (tail.length > 0 && tail[0].role !== 'user') {
+    tail = tail.slice(1);
+  }
+
+  return tail;
 }
