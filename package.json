@@ -39,7 +39,7 @@
     "README.md"
   ],
   "license": "MIT",
-  "author": "David Kogan <founder@clawnitor.io>",
+  "author": "David Kogan",
   "repository": {
     "type": "git",
     "url": "https://github.com/davidkny22/recursive-claw"
