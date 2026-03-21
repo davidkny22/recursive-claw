@@ -18,19 +18,19 @@
     "check": "tsc --noEmit && eslint src/ tests/ && vitest run"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.0",
     "@anthropic-ai/sdk": "^0.39.0",
-    "openai": "^4.77.0",
-    "@google/genai": "^1.0.0"
+    "@google/genai": "^1.0.0",
+    "better-sqlite3": "^12.6.0",
+    "openai": "^4.77.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^4.0.0",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.4.0",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0"
   },
   "files": [
     "dist/",
