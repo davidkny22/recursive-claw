@@ -41,7 +41,6 @@ export class RecursiveClawEngine implements ContextEngineInstance {
   constructor(api: OpenClawPluginAPI | null, pluginConfig?: Record<string, unknown>) {
     this.api = api;
     this.pluginConfig = pluginConfig ?? {};
-    console.log('[recursive-claw] Engine instance created');
   }
 
   async ensureReady(): Promise<void> {
@@ -50,25 +49,20 @@ export class RecursiveClawEngine implements ContextEngineInstance {
 
   private async ensureBootstrapped(): Promise<void> {
     if (!this.bootstrapped) {
-      console.log('[recursive-claw] Auto-bootstrapping (bootstrap() not called by host)');
       await this.bootstrap();
     }
   }
 
   async bootstrap(): Promise<void> {
     if (this.bootstrapped) return;
-    console.log('[recursive-claw] bootstrap() called, pluginConfig:', JSON.stringify(this.pluginConfig));
-
     // 1. Resolve config
     this.config = resolveConfig(this.pluginConfig);
-    console.log('[recursive-claw] resolved databasePath:', this.config.databasePath);
 
     // 2. Initialize storage — use configured path or auto-detect
     // Follow lossless-claw pattern: default to ~/.openclaw/recursive-claw.db
     const home = process.env.HOME || process.env.USERPROFILE || '.';
     const stateDir = process.env.OPENCLAW_STATE_DIR || join(home, '.openclaw');
     const dbPath = this.config.databasePath || join(stateDir, 'recursive-claw.db');
-    console.log('[recursive-claw] using database at:', dbPath);
 
     const { mkdir } = await import('fs/promises');
     const { dirname } = await import('path');
@@ -97,7 +91,6 @@ export class RecursiveClawEngine implements ContextEngineInstance {
     // Tools are registered at plugin load time in plugin.ts, not here
 
     this.bootstrapped = true;
-    console.log('[recursive-claw] bootstrap complete — mode:', this.config.mode);
   }
 
   async ingest(params: IngestParams): Promise<void> {
@@ -153,7 +146,7 @@ export class RecursiveClawEngine implements ContextEngineInstance {
           metadata: { originalContent: msg.content },
         });
       }
-      console.log(`[recursive-claw] Stored ${newMessages.length} new messages (total: ${storableMessages.length})`);
+      // Messages stored silently — no debug logging in production;
     }
 
     const systemMessages = messages.filter(m => m.role === 'system');

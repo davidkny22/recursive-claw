@@ -37,7 +37,6 @@ let globalEngine: RecursiveClawEngine | null = null;
 
 export default function register(api: OpenClawPluginAPI): void {
   api.registerContextEngine('recursive-claw', (config) => {
-    console.log('[recursive-claw] Context engine factory called');
     globalEngine = new RecursiveClawEngine(api, config);
     return globalEngine;
   });
@@ -75,11 +74,9 @@ export default function register(api: OpenClawPluginAPI): void {
         },
         { name: def.name }
       );
-      console.log(`[recursive-claw] Registered tool: ${def.name}`);
     } catch (err) {
       console.error(`[recursive-claw] Failed to register tool ${def.name}:`, err);
     }
   }
 
-  console.log('[recursive-claw] Plugin registration complete');
 }
