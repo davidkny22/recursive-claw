@@ -5,8 +5,7 @@ dist/
 .env
 .env.*
 vendor/
-docs/research/
-docs/superpowers/
+docs/
 coverage/
 *.tsbuildinfo
 .DS_Store
