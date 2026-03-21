@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.db
+*.db-journal
+.env
+.env.*
+vendor/
+docs/research/
+docs/superpowers/
+coverage/
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,54 @@
+{
+  "name": "recursive-claw",
+  "version": "0.1.0",
+  "description": "RLM-native ContextEngine plugin for OpenClaw — zero information loss, massive cost reduction",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src/ tests/",
+    "format": "prettier --write src/ tests/",
+    "check": "tsc --noEmit && eslint src/ tests/ && vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.77.0",
+    "@google/genai": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0",
+    "tsx": "^4.7.0"
+  },
+  "files": [
+    "dist/",
+    "openclaw.plugin.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": "David Kogan <founder@clawnitor.io>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/davidkny22/recursive-claw"
+  },
+  "keywords": [
+    "openclaw",
+    "context-engine",
+    "rlm",
+    "recursive-language-models",
+    "context-management"
+  ]
+}

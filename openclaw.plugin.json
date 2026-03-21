@@ -1,0 +1,36 @@
+{
+  "id": "recursive-claw",
+  "name": "recursive-claw",
+  "description": "RLM-native context engine — zero information loss, massive cost reduction",
+  "version": "0.1.0",
+  "kind": "context-engine",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "mode": { "enum": ["tools", "repl"], "default": "tools" },
+      "freshTailCount": { "type": "number", "default": 20 },
+      "databasePath": { "type": "string" },
+      "subQuery": {
+        "type": "object",
+        "properties": {
+          "defaultProvider": { "enum": ["anthropic", "openai", "google", "openrouter"], "default": "anthropic" },
+          "defaultModel": { "type": "string", "default": "claude-haiku-4-5" },
+          "maxBudgetPerQuery": { "type": "number", "default": 0.05 },
+          "maxBudgetPerTurn": { "type": "number", "default": 0.10 },
+          "maxConcurrent": { "type": "number", "default": 4 },
+          "maxDepth": { "type": "number", "default": 1 },
+          "timeout": { "type": "number", "default": 30000 },
+          "providers": {
+            "type": "object",
+            "properties": {
+              "anthropic": { "type": "object", "properties": { "apiKey": { "type": "string" }, "model": { "type": "string" } } },
+              "openai": { "type": "object", "properties": { "apiKey": { "type": "string" }, "model": { "type": "string" } } },
+              "google": { "type": "object", "properties": { "apiKey": { "type": "string" }, "model": { "type": "string" } } },
+              "openrouter": { "type": "object", "properties": { "apiKey": { "type": "string" }, "model": { "type": "string" } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
