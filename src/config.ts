@@ -1,9 +1,16 @@
 import type { RecursiveClawConfig, ProviderName, EngineMode } from './types.js';
 
+function getDefaultDatabasePath(): string {
+  // Use OpenClaw's state dir if available, else ~/.openclaw, else cwd
+  const stateDir = process.env.OPENCLAW_STATE_DIR
+    || `${process.env.HOME || process.env.USERPROFILE || '.'}/.openclaw`;
+  return `${stateDir}/recursive-claw/context.db`;
+}
+
 const DEFAULTS: RecursiveClawConfig = {
   mode: 'tools',
   freshTailCount: 20,
-  databasePath: '',
+  databasePath: '',  // resolved at runtime via getDefaultDatabasePath()
   subQuery: {
     defaultProvider: 'anthropic',
     defaultModel: 'claude-haiku-4-5',

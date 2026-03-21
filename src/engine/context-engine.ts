@@ -57,13 +57,18 @@ export class RecursiveClawEngine implements ContextEngineInstance {
 
   async bootstrap(): Promise<void> {
     if (this.bootstrapped) return;
-    console.log('[recursive-claw] bootstrap() called');
+    console.log('[recursive-claw] bootstrap() called, pluginConfig:', JSON.stringify(this.pluginConfig));
 
     // 1. Resolve config
     this.config = resolveConfig(this.pluginConfig);
+    console.log('[recursive-claw] resolved databasePath:', this.config.databasePath);
 
-    // 2. Initialize storage
-    const dbPath = this.config.databasePath || join(process.cwd(), '.recursive-claw', 'context.db');
+    // 2. Initialize storage — use configured path or auto-detect
+    // Follow lossless-claw pattern: default to ~/.openclaw/recursive-claw.db
+    const home = process.env.HOME || process.env.USERPROFILE || '.';
+    const stateDir = process.env.OPENCLAW_STATE_DIR || join(home, '.openclaw');
+    const dbPath = this.config.databasePath || join(stateDir, 'recursive-claw.db');
+    console.log('[recursive-claw] using database at:', dbPath);
 
     const { mkdir } = await import('fs/promises');
     const { dirname } = await import('path');
@@ -123,8 +128,33 @@ export class RecursiveClawEngine implements ContextEngineInstance {
     const { sessionId, messages } = params;
     this.retrieval!.setCurrentSession(sessionId);
 
+    // Store any new messages from the pipeline.
+    // OpenClaw passes the full message history in params.messages.
+    // We diff against what we already have and store new ones.
+    await this.storage!.ensureSession(sessionId);
+    const existingCount = await this.storage!.getMessageCount(sessionId);
+
+    if (messages.length > existingCount) {
+      const newMessages = messages.slice(existingCount);
+      for (let i = 0; i < newMessages.length; i++) {
+        const msg = newMessages[i];
+        const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        await this.storage!.storeMessage({
+          id: crypto.randomUUID(),
+          sessionId,
+          role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
+          content: contentStr,
+          timestamp: Date.now(),
+          messageIndex: existingCount + i,
+          tokenEstimate: estimateTokens(contentStr),
+          metadata: { originalContent: msg.content },
+        });
+      }
+      console.log(`[recursive-claw] Stored ${newMessages.length} new messages (total: ${messages.length})`);
+    }
+
     const systemMessages = messages.filter(m => m.role === 'system');
-    return this.assembler!.assemble(sessionId, systemMessages);
+    return this.assembler!.assemble(sessionId, systemMessages, messages);
   }
 
   async compact(params: CompactParams): Promise<CompactResult> {

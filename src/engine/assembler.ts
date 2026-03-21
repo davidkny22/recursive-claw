@@ -18,10 +18,47 @@ export class Assembler {
     this.config = config;
   }
 
-  async assemble(sessionId: string, systemMessages: Array<{ role: string; content: string }>): Promise<AssembleResult> {
-    // 1. Get fresh tail
-    const tail = await this.storage.getTailMessages(sessionId, this.config.freshTailCount);
-    const tailMessages = tail.map(m => ({ role: m.role, content: m.content }));
+  async assemble(
+    sessionId: string,
+    systemMessages: Array<{ role: string; content: unknown }>,
+    pipelineMessages?: Array<{ role: string; content: unknown }>
+  ): Promise<AssembleResult> {
+    // 1. Get fresh tail from the pipeline messages (already in correct format)
+    // We use the pipeline messages directly because they contain proper
+    // tool_use_id references and Anthropic content block structure.
+    // If no pipeline messages, fall back to DB.
+    let tailMessages: Array<{ role: string; content: unknown }>;
+
+    const nonSystemPipeline = pipelineMessages?.filter(m => m.role !== 'system') ?? [];
+    if (nonSystemPipeline.length > 0) {
+      // Use pipeline messages directly — they have proper content block structure.
+      // Start from the end and walk backward to find a safe cut point where
+      // no tool_result is orphaned (missing its tool_use in the window).
+      let candidate = nonSystemPipeline.slice(-this.config.freshTailCount);
+
+      // Walk forward: if first message contains tool_result blocks, skip it
+      // to avoid orphaned references. Keep trimming until we start with a
+      // user or assistant message (not a tool_result continuation).
+      while (candidate.length > 0) {
+        const first = candidate[0];
+        const content = first.content;
+        const isToolResult = first.role === 'tool'
+          || (Array.isArray(content) && content.some((b: Record<string, unknown>) => b.type === 'tool_result'));
+        if (isToolResult) {
+          candidate = candidate.slice(1);
+        } else {
+          break;
+        }
+      }
+
+      tailMessages = candidate;
+    } else {
+      const tail = await this.storage.getTailMessages(sessionId, this.config.freshTailCount);
+      tailMessages = tail.map(m => ({
+        role: m.role,
+        content: m.metadata?.originalContent ?? m.content,
+      }));
+    }
 
     // 2. Build manifest
     const manifest = await buildManifest(this.storage, sessionId);
@@ -39,7 +76,7 @@ export class Assembler {
     const messages = [...systemMessages, ...tailMessages];
 
     // 5. Estimate tokens
-    const totalText = messages.map(m => m.content).join('') + systemPromptAddition;
+    const totalText = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('') + systemPromptAddition;
     const estimatedTokens = estimateTokens(totalText);
 
     return {

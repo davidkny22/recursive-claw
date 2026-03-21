@@ -120,7 +120,7 @@ export interface ContextManifest {
 // --- Assembler Output ---
 
 export interface AssembleResult {
-  messages: Array<{ role: string; content: string }>;
+  messages: Array<{ role: string; content: unknown }>;
   estimatedTokens: number;
   systemPromptAddition?: string;
 }
@@ -210,7 +210,8 @@ export interface ToolDefinition {
     properties: Record<string, unknown>;
     required?: string[];
   };
-  handler: (params: Record<string, unknown>) => Promise<unknown>;
+  handler?: (params: Record<string, unknown>) => Promise<unknown>;
+  execute?: (id: string, params: Record<string, unknown>) => Promise<unknown>;
 }
 
 export interface ContextEngineInstance {
