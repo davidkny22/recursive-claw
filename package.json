@@ -1,6 +1,6 @@
 {
   "name": "recursive-claw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "RLM-native ContextEngine plugin for OpenClaw — zero information loss, massive cost reduction",
   "type": "module",
   "main": "dist/index.js",

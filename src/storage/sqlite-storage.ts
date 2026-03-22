@@ -18,8 +18,6 @@ import type {
  * (wrapping sync calls) for StorageInterface compatibility. Future backends
  * (Postgres, cloud sync) must be genuinely async.
  *
- * Note: All .exec() calls below are better-sqlite3's SQL execution method
- * (runs SQL against the database), not child_process.
  */
 export class SQLiteStorage implements StorageInterface {
   private db: Database.Database | null = null;
@@ -305,7 +303,6 @@ export class SQLiteStorage implements StorageInterface {
   }
 
   async rebuildFTSIndex(): Promise<void> {
-    // better-sqlite3 SQL execution — rebuilds the FTS5 index
     const db = this.requireDb();
     db.prepare("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')").run();
   }
