@@ -1,12 +1,14 @@
 {
   "name": "recursive-claw",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "RLM-native ContextEngine plugin for OpenClaw — zero information loss, massive cost reduction",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "openclaw": {
-    "extensions": ["./dist/plugin.js"]
+    "extensions": [
+      "./dist/plugin.js"
+    ]
   },
   "engines": {
     "node": ">=20.0.0"
@@ -23,11 +25,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/genai": "^1.0.0",
-    "better-sqlite3": "^12.6.0",
+    "node-sqlite3-wasm": "^0.8.55",
     "openai": "^4.77.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.4.0",

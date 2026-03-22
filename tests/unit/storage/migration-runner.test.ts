@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
+import { Database } from 'node-sqlite3-wasm';
 import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { MigrationRunner } from '../../../src/storage/migration-runner.js';
 
 describe('MigrationRunner', () => {
-  let db: Database.Database;
+  let db: Database;
   let tempDir: string;
 
   beforeEach(() => {
@@ -25,10 +25,9 @@ describe('MigrationRunner', () => {
 
     expect(runner.getCurrentVersion()).toBe(1);
 
-    // Verify tables exist
-    const tables = db.prepare(
+    const tables = db.all(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ).all() as Array<{ name: string }>;
+    ) as Array<{ name: string }>;
     const names = tables.map(t => t.name);
 
     expect(names).toContain('sessions');
@@ -39,7 +38,7 @@ describe('MigrationRunner', () => {
   it('is idempotent — running twice does not error', () => {
     const runner = new MigrationRunner(db);
     runner.run();
-    runner.run(); // second run should skip
+    runner.run();
     expect(runner.getCurrentVersion()).toBe(1);
   });
 
@@ -47,8 +46,7 @@ describe('MigrationRunner', () => {
     const runner = new MigrationRunner(db);
     runner.run();
 
-    // Manually mark version higher
-    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(99, Date.now());
+    db.run('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)', [99, Date.now()]);
 
     const runner2 = new MigrationRunner(db);
     expect(runner2.getCurrentVersion()).toBe(99);

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { Database } from 'node-sqlite3-wasm';
 import type { StorageInterface } from './storage-interface.js';
 import { MigrationRunner } from './migration-runner.js';
 import { StorageError } from '../errors.js';
@@ -12,15 +12,13 @@ import type {
 } from '../types.js';
 
 /**
- * SQLite-backed StorageInterface using better-sqlite3.
+ * SQLite-backed StorageInterface using node-sqlite3-wasm.
  *
- * better-sqlite3 is synchronous by design. All methods return Promises
- * (wrapping sync calls) for StorageInterface compatibility. Future backends
- * (Postgres, cloud sync) must be genuinely async.
- *
+ * Pure WebAssembly — no native bindings, no compilation required.
+ * Writes directly to disk via Node.js fs API. Supports FTS5.
  */
 export class SQLiteStorage implements StorageInterface {
-  private db: Database.Database | null = null;
+  private db: Database | null = null;
   private dbPath: string;
 
   constructor(dbPath: string) {
@@ -30,11 +28,9 @@ export class SQLiteStorage implements StorageInterface {
   async initialize(): Promise<void> {
     try {
       this.db = new Database(this.dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
 
-      // Register custom regex function for regexSearch
-      this.db.function('regexp', { deterministic: true }, (pattern: unknown, value: unknown) => {
+      // Register custom regex function
+      this.db.function('regexp', (pattern: unknown, value: unknown) => {
         if (typeof pattern !== 'string' || typeof value !== 'string') return 0;
         try {
           return new RegExp(pattern, 'i').test(value) ? 1 : 0;
@@ -57,73 +53,58 @@ export class SQLiteStorage implements StorageInterface {
 
   async storeMessage(msg: StoredMessage): Promise<void> {
     const db = this.requireDb();
-    db.prepare(`
+    db.run(`
       INSERT INTO messages (id, session_id, role, content, timestamp, message_index, token_estimate, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      msg.id,
-      msg.sessionId,
-      msg.role,
-      msg.content,
-      msg.timestamp,
-      msg.messageIndex,
-      msg.tokenEstimate,
+    `, [
+      msg.id, msg.sessionId, msg.role, msg.content,
+      msg.timestamp, msg.messageIndex, msg.tokenEstimate,
       msg.metadata ? JSON.stringify(msg.metadata) : null,
-    );
+    ]);
 
-    // Update session counters
-    db.prepare(`
+    db.run(`
       UPDATE sessions SET
         last_active = MAX(last_active, ?),
         message_count = message_count + 1,
         total_tokens = total_tokens + ?
       WHERE session_id = ?
-    `).run(msg.timestamp, msg.tokenEstimate, msg.sessionId);
+    `, [msg.timestamp, msg.tokenEstimate, msg.sessionId]);
   }
 
   async getMessages(sessionId: string, range?: { start: number; end: number }): Promise<StoredMessage[]> {
     const db = this.requireDb();
-    let rows: unknown[];
 
     if (range) {
-      rows = db.prepare(`
+      return db.all(`
         SELECT * FROM messages
         WHERE session_id = ? AND message_index >= ? AND message_index < ?
         ORDER BY message_index ASC
-      `).all(sessionId, range.start, range.end);
-    } else {
-      rows = db.prepare(`
-        SELECT * FROM messages
-        WHERE session_id = ?
-        ORDER BY message_index ASC
-      `).all(sessionId);
+      `, [sessionId, range.start, range.end]).map(row => this.rowToMessage(row));
     }
 
-    return rows.map(row => this.rowToMessage(row));
+    return db.all(`
+      SELECT * FROM messages WHERE session_id = ? ORDER BY message_index ASC
+    `, [sessionId]).map(row => this.rowToMessage(row));
   }
 
   async getMessageCount(sessionId: string): Promise<number> {
-    const row = this.requireDb().prepare(
-      'SELECT COUNT(*) as count FROM messages WHERE session_id = ?'
-    ).get(sessionId) as { count: number } | undefined;
+    const row = this.requireDb().get(
+      'SELECT COUNT(*) as count FROM messages WHERE session_id = ?', [sessionId]
+    ) as { count: number } | undefined;
     return row?.count ?? 0;
   }
 
   async getTailMessages(sessionId: string, count: number): Promise<StoredMessage[]> {
-    const rows = this.requireDb().prepare(`
-      SELECT * FROM messages
-      WHERE session_id = ?
-      ORDER BY message_index DESC
-      LIMIT ?
-    `).all(sessionId, count);
-
-    return rows.map(row => this.rowToMessage(row)).reverse();
+    return this.requireDb().all(`
+      SELECT * FROM messages WHERE session_id = ?
+      ORDER BY message_index DESC LIMIT ?
+    `, [sessionId, count]).map(row => this.rowToMessage(row)).reverse();
   }
 
   async getNextMessageIndex(sessionId: string): Promise<number> {
-    const row = this.requireDb().prepare(
-      'SELECT MAX(message_index) as max_idx FROM messages WHERE session_id = ?'
-    ).get(sessionId) as { max_idx: number | null } | undefined;
+    const row = this.requireDb().get(
+      'SELECT MAX(message_index) as max_idx FROM messages WHERE session_id = ?', [sessionId]
+    ) as { max_idx: number | null } | undefined;
     return (row?.max_idx ?? -1) + 1;
   }
 
@@ -131,12 +112,11 @@ export class SQLiteStorage implements StorageInterface {
     const db = this.requireDb();
     const limit = opts?.limit ?? 20;
 
-    // Sanitize query for FTS5: remove special characters that break FTS5 syntax
+    // Sanitize for FTS5
     const sanitized = query.replace(/[?*"(){}[\]:^~!@#$%&]/g, ' ').trim();
     if (!sanitized) return [];
 
-    const params: unknown[] = [sanitized];
-
+    const params: (string | number | null)[] = [sanitized];
     let sql = `
       SELECT m.*, bm25(messages_fts) as score
       FROM messages_fts
@@ -160,15 +140,14 @@ export class SQLiteStorage implements StorageInterface {
     sql += ' ORDER BY score LIMIT ?';
     params.push(limit);
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.rowToSearchResult(row));
+    return db.all(sql, params).map(row => this.rowToSearchResult(row));
   }
 
   async regexSearch(pattern: string, opts?: SearchOptions): Promise<SearchResult[]> {
     const db = this.requireDb();
     const limit = opts?.limit ?? 20;
     const conditions: string[] = ['regexp(?, content)'];
-    const params: unknown[] = [pattern];
+    const params: (string | number | null)[] = [pattern];
 
     if (opts?.sessionId && opts.scope !== 'all') {
       conditions.push('session_id = ?');
@@ -186,19 +165,15 @@ export class SQLiteStorage implements StorageInterface {
     const sql = `
       SELECT *, 1.0 as score FROM messages
       WHERE ${conditions.join(' AND ')}
-      ORDER BY timestamp DESC
-      LIMIT ?
+      ORDER BY timestamp DESC LIMIT ?
     `;
     params.push(limit);
 
-    const rows = db.prepare(sql).all(...params);
-    return rows.map(row => this.rowToSearchResult(row));
+    return db.all(sql, params).map(row => this.rowToSearchResult(row));
   }
 
   async getTimeline(sessionId: string): Promise<TimelineEntry[]> {
-    const db = this.requireDb();
-
-    const rows = db.prepare(`
+    return this.requireDb().all(`
       SELECT
         (timestamp / 3600000) * 3600000 as period_start,
         COUNT(*) as msg_count,
@@ -212,85 +187,61 @@ export class SQLiteStorage implements StorageInterface {
       WHERE session_id = ?
       GROUP BY period_start
       ORDER BY period_start ASC
-    `).all(sessionId) as Array<{
-      period_start: number;
-      msg_count: number;
-      token_count: number;
-      user_count: number;
-      assistant_count: number;
-      tool_count: number;
-      min_idx: number;
-      max_idx: number;
-    }>;
-
-    return rows.map(row => {
-      const start = new Date(row.period_start);
-      const end = new Date(row.period_start + 3600000);
+    `, [sessionId]).map((row: Record<string, unknown>) => {
+      const periodStart = row.period_start as number;
+      const start = new Date(periodStart);
+      const end = new Date(periodStart + 3600000);
       const fmt = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 16);
 
       return {
         period: `${fmt(start)}-${fmt(end)}`,
-        messageCount: row.msg_count,
-        tokenCount: row.token_count,
+        messageCount: row.msg_count as number,
+        tokenCount: row.token_count as number,
         roles: {
-          user: row.user_count,
-          assistant: row.assistant_count,
-          tool: row.tool_count,
+          user: row.user_count as number,
+          assistant: row.assistant_count as number,
+          tool: row.tool_count as number,
         },
         topKeywords: [],
-        messageIndexRange: { start: row.min_idx, end: row.max_idx },
+        messageIndexRange: { start: row.min_idx as number, end: row.max_idx as number },
         sessionId,
       };
     });
   }
 
   async getSessions(): Promise<SessionInfo[]> {
-    const rows = this.requireDb().prepare(
+    return this.requireDb().all(
       'SELECT * FROM sessions ORDER BY last_active DESC'
-    ).all() as Array<{
-      session_id: string;
-      created_at: number;
-      last_active: number;
-      message_count: number;
-      total_tokens: number;
-    }>;
-
-    return rows.map(row => ({
-      sessionId: row.session_id,
-      createdAt: row.created_at,
-      lastActive: row.last_active,
-      messageCount: row.message_count,
-      totalTokens: row.total_tokens,
+    ).map((row: Record<string, unknown>) => ({
+      sessionId: row.session_id as string,
+      createdAt: row.created_at as number,
+      lastActive: row.last_active as number,
+      messageCount: row.message_count as number,
+      totalTokens: row.total_tokens as number,
     }));
   }
 
   async getSession(sessionId: string): Promise<SessionInfo | null> {
-    const row = this.requireDb().prepare(
-      'SELECT * FROM sessions WHERE session_id = ?'
-    ).get(sessionId) as {
-      session_id: string;
-      created_at: number;
-      last_active: number;
-      message_count: number;
-      total_tokens: number;
-    } | undefined;
+    const row = this.requireDb().get(
+      'SELECT * FROM sessions WHERE session_id = ?', [sessionId]
+    ) as Record<string, unknown> | undefined;
 
     if (!row) return null;
     return {
-      sessionId: row.session_id,
-      createdAt: row.created_at,
-      lastActive: row.last_active,
-      messageCount: row.message_count,
-      totalTokens: row.total_tokens,
+      sessionId: row.session_id as string,
+      createdAt: row.created_at as number,
+      lastActive: row.last_active as number,
+      messageCount: row.message_count as number,
+      totalTokens: row.total_tokens as number,
     };
   }
 
   async ensureSession(sessionId: string): Promise<void> {
     const now = Date.now();
-    this.requireDb().prepare(`
+    this.requireDb().run(`
       INSERT OR IGNORE INTO sessions (session_id, created_at, last_active, message_count, total_tokens)
       VALUES (?, ?, ?, 0, 0)
-    `).run(sessionId, now, now);
+    `, [sessionId, now, now]);
   }
 
   async getMessagesAcrossSessions(query: string, opts?: CrossSessionOptions): Promise<SearchResult[]> {
@@ -303,13 +254,10 @@ export class SQLiteStorage implements StorageInterface {
   }
 
   async rebuildFTSIndex(): Promise<void> {
-    const db = this.requireDb();
-    db.prepare("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')").run();
+    this.requireDb().run("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
   }
 
-  // --- Private helpers ---
-
-  private requireDb(): Database.Database {
+  private requireDb(): Database {
     if (!this.db) throw new StorageError('Database not initialized. Call initialize() first.');
     return this.db;
   }

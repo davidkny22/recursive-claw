@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type { Database } from 'node-sqlite3-wasm';
 import { migration001 } from './migrations/001-initial.js';
 
 interface Migration {
@@ -10,9 +10,9 @@ interface Migration {
 const MIGRATIONS: Migration[] = [migration001];
 
 export class MigrationRunner {
-  private db: Database.Database;
+  private db: Database;
 
-  constructor(db: Database.Database) {
+  constructor(db: Database) {
     this.db = db;
   }
 
@@ -21,8 +21,7 @@ export class MigrationRunner {
    * skips already-applied migrations.
    */
   run(): void {
-    // Ensure schema_version table exists (bootstrap for first run)
-    this.runSQL(`CREATE TABLE IF NOT EXISTS schema_version (
+    this.db.run(`CREATE TABLE IF NOT EXISTS schema_version (
       version INTEGER NOT NULL,
       applied_at INTEGER NOT NULL
     )`);
@@ -32,31 +31,25 @@ export class MigrationRunner {
     for (const migration of MIGRATIONS) {
       if (migration.version <= currentVersion) continue;
 
-      const transaction = this.db.transaction(() => {
+      this.db.run('BEGIN');
+      try {
         for (const sql of migration.up) {
-          this.runSQL(sql);
+          this.db.run(sql);
         }
-        this.db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
-          migration.version,
-          Date.now()
-        );
-      });
-
-      transaction();
+        this.db.run('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)',
+          [migration.version, Date.now()]);
+        this.db.run('COMMIT');
+      } catch (err) {
+        this.db.run('ROLLBACK');
+        throw err;
+      }
     }
-  }
-
-  private runSQL(sql: string): void {
-    // Indirect method access avoids OpenClaw security scanner pattern matching
-    const m = ['e', 'x', 'e', 'c'].join('') as keyof typeof this.db;
-    (this.db[m] as (sql: string) => void)(sql);
   }
 
   getCurrentVersion(): number {
     try {
-      const row = this.db.prepare('SELECT MAX(version) as version FROM schema_version').get() as
-        | { version: number | null }
-        | undefined;
+      const row = this.db.get('SELECT MAX(version) as version FROM schema_version') as
+        { version: number | null } | undefined;
       return row?.version ?? 0;
     } catch {
       return 0;
