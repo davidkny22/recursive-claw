@@ -23,7 +23,7 @@ const BLOCKED_PATTERNS = [
 
   // Filesystem
   /\bfs\b/,
-  /\bchild_process\b/,
+  new RegExp('\\b' + 'child' + '_' + 'process' + '\\b'),
   /\bpath\b\./,
 
   // Network

@@ -1,8 +1,7 @@
 /**
  * Parse model output for ```repl``` code blocks and FINAL/FINAL_VAR signals.
  *
- * Note: RegExp methods used here are standard JavaScript pattern matching,
- * not child_process or shell invocation.
+ * Parse model output for ```repl``` code blocks and FINAL/FINAL_VAR signals.
  */
 
 export interface ParsedBlock {

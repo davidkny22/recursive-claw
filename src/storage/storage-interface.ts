@@ -10,10 +10,10 @@ import type {
 /**
  * Abstract storage interface for recursive-claw.
  *
- * The default implementation uses better-sqlite3, which is synchronous.
- * All methods return Promises for backend compatibility — the SQLite
- * implementation wraps sync calls in resolved promises. Future backends
- * (Postgres, cloud sync) must be genuinely async.
+ * The default implementation uses node-sqlite3-wasm (pure WebAssembly,
+ * no native bindings). All methods return Promises for backend
+ * compatibility. Future backends (Postgres, cloud sync) must be
+ * genuinely async.
  */
 export interface StorageInterface {
   initialize(): Promise<void>;

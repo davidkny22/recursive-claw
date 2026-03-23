@@ -37,7 +37,11 @@ let globalEngine: RecursiveClawEngine | null = null;
 
 export default function register(api: OpenClawPluginAPI): void {
   api.registerContextEngine('recursive-claw', (config) => {
-    globalEngine = new RecursiveClawEngine(api, config);
+    // Reuse existing engine if already bootstrapped — avoids DB locking
+    // from multiple Database instances opening the same file
+    if (!globalEngine) {
+      globalEngine = new RecursiveClawEngine(api, config);
+    }
     return globalEngine;
   });
 
